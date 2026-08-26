@@ -12,59 +12,52 @@ from panda3d.core import TransparencyAttrib, AntialiasAttrib
 from panda3d.core import Point3, Vec3
 from panda3d.core import Texture
 
-from example2 import create_shaded_image
-from example import create_normal_dot
-
-
-
 from direct.gui.DirectWaitBar import DirectWaitBar
 
 
 class SpinnerDots(DirectFrame):
 
-    def __init__(self, parent=None, shaded=True, **kw):
-        super().__init__(parent, **kw)
+    """Loading spinner
+        Arges:
+            dot_color (tuple): The color of the sprites; (RGBA); specify within the range of 0 to 1.
+            shaded (Bool): If True, shaded circular sprites are created; default is True.
+            radius (float): The radius of the circle around which the sprites rotate; default is 0.15.
+            scale (float): The scale of the sprites; default is 0.03.
+            duration (float): Seconds for a sprite to complete one rotation; default is 3.0 seconds.
+    """
 
+    def __init__(self, dot_color=None, dot_cnt=6, shaded=True, radius=0.15, scale=0.03, duration=3.0):
+        super().__init__()
         self.initialiseoptions(type(self))
-        self.set_transparency(TransparencyAttrib.MAlpha)
+
+        tex = self.create_dot_texture(shaded, dot_color)
+        self.sprites = [Sprite(self, tex, i, radius, scale, duration) for i in range(dot_cnt)]
+
+    def create_dot_texture(self, shaded, dot_color):
+        color = (1., 0., 0., 1.) if dot_color is None else dot_color
+        *rgb, a = color
+        bgr = np.array(rgb)[[2, 1, 0]]
+
+        img_size = 64
+        img = self.create_shaded_dot_img(img_size, bgr, a) if shaded \
+            else self.create_dot_img(img_size, bgr, a)
 
         tex = Texture('image')
         tex.setup_2d_texture(
-            # 200, 200,
-            64, 64,
-            Texture.T_unsigned_byte,
-            Texture.F_rgba
-        )
-        # img = create_shaded_image()
-        img = create_normal_dot()
-        tex.set_ram_image(img)
-
-        # self.sprites = [Sprite('transparent_circle.png', i) for i in range(6)]
-        # self.sprites = [Sprite('shaded_sphere.png', i) for i in range(6)]
-        self.sprites = [Sprite(tex, i) for i in range(6)]
-
-    def calc_center_and_radius(self, size):
-        center = size // 2
-        radius = size / 2 - 2
-        return center, radius
-
-    def create_texture(self, shaded, color):
-        size = 64
-
-        img = self.create_shaded_dot(size, color) if shaded \
-            else self.create_normal_dot(size, color)
-
-        tex = Texture('image')
-        tex.setup_2d_texture(
-            x_size=size,
-            y_size=size,
+            x_size=img_size,
+            y_size=img_size,
             component_type=Texture.T_unsigned_byte,
             format=Texture.F_rgba
         )
         tex.set_ram_image(img)
         return tex
 
-    def create_normal_dot(self, size, color):
+    def calc_center_and_radius(self, size):
+        center = size // 2
+        radius = size / 2 - 2
+        return center, radius
+
+    def create_dot_img(self, size, bgr, a):
         center, radius = self.calc_center_and_radius(size)
 
         # Create a coordinate grid and calculate the distance from the center.
@@ -73,16 +66,49 @@ class SpinnerDots(DirectFrame):
 
         # Create an alpha mask for anti-aliasing.
         blur_width = 1.0
-        alpha = np.clip((radius - dist) / blur_width + 0.5, 0, 1) * 255
+        alpha = np.clip((radius - dist) / blur_width + 0.5, 0, a) * 255
+        alpha = alpha.astype(np.uint8)
 
         # Create a BGR image and combine it with the alpha channel to convert it to a BGRA image.
-        img = np.full((size, size, 3), color, dtype=np.uint8)
+        img = np.full((size, size, 3), bgr * 255, dtype=np.uint8)
         img = np.dstack((img, alpha))
+
         return img
 
-    def create_shaded_dot(self):
-        pass
+    def create_shaded_dot_img(self, size, bgr, a):
+        center, radius = self.calc_center_and_radius(size)
 
+        y, x = np.ogrid[:size, :size]
+        dist = np.sqrt((x - center) ** 2 + (y - center) ** 2)
+
+        # Create mask
+        mask = dist <= radius
+
+        # Calculating the spherical normal vector.
+        # Use np.maximum in case the calculation result becomes slightly less than 0 due to rounding error.
+        nx = (x - center) / radius
+        ny = (y - center) / radius
+        nz = np.sqrt(np.maximum(0.0, 1.0 - nx ** 2 - ny ** 2))
+
+        # Light source vector (from the top left)
+        lx, ly, lz = -0.8, 0.8, 1.0
+        l_len = np.sqrt(lx ** 2 + ly ** 2 + lz ** 2)
+        lx, ly, lz = lx / l_len, ly / l_len, lz / l_len
+
+        # Calculate Shading.
+        diffuse = np.maximum(0.0, nx * lx + ny * ly + nz * lz)
+        shading = diffuse[:, :, np.newaxis] * (bgr * 255) + 40
+        shading = np.clip(shading, 0, 255)
+
+        # Create bgra image.
+        bgra = np.zeros((size, size, 4), dtype=np.uint8)
+        bgra[mask, :3] = shading[mask].astype(np.uint8)
+
+        # Anti-aliasing
+        alpha = np.clip((radius - dist) * 2.0 + 0.5, 0, a)
+        bgra[:, :, 3] = (alpha * 255).astype(np.uint8)
+        bgra[:, :, 3] = np.where(mask, bgra[:, :, 3], 0)
+        return bgra
 
     def update(self):
         dt = globalClock.get_dt()
@@ -98,10 +124,12 @@ class SpinnerDots(DirectFrame):
 
 class Sprite(OnscreenImage):
 
-    def __init__(self, image, starting_order, radius=0.15, scale=0.03, duration=3.0):
+    # def __init__(self, parent, image, starting_order, radius=0.15, scale=0.03, duration=3.0):
+    def __init__(self, parent, image, starting_order, radius, scale, duration):
         super().__init__(
             image=image,
-            parent=base.aspect2d,
+            # parent=base.aspect2d,
+            parent=parent,
             pos=Point3(radius, 0, 0),
             scale=(scale, 1, scale)
         )
@@ -165,6 +193,7 @@ class SpinnerDemo(ShowBase):
 
         # self.sprites = [Sprite('circle.png', i) for i in range(6)]
         self.spinner = SpinnerDots()
+
         self.accept('escape', sys.exit)
         self.task_mgr.add(self.update, 'update')
 

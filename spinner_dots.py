@@ -1,26 +1,20 @@
 import math
-import sys
 
 import numpy as np
 
 from direct.gui.DirectGui import DirectFrame
-import direct.gui.DirectGuiGlobals as DGG
-from direct.showbase.ShowBase import ShowBase
 from direct.gui.DirectGui import OnscreenImage
 from direct.showbase.ShowBaseGlobal import globalClock
-from panda3d.core import TransparencyAttrib, AntialiasAttrib
-from panda3d.core import Point3, Vec3
+from panda3d.core import TransparencyAttrib
+from panda3d.core import Point3
 from panda3d.core import Texture
-
-from direct.gui.DirectWaitBar import DirectWaitBar
 
 
 class SpinnerDots(DirectFrame):
-
     """Loading spinner
         Arges:
             dot_color (tuple): The color of the sprites; (RGBA); specify within the range of 0 to 1.
-            shaded (Bool): If True, shaded circular sprites are created; default is True.
+            shaded (Bool): If True, shaded circular sprites are created; default is False.
             radius (float): The radius of the circle around which the sprites rotate; default is 0.15.
             scale (float): The scale of the sprites; default is 0.03.
             duration (float): Seconds for a sprite to complete one rotation; default is 3.0 seconds.
@@ -32,9 +26,10 @@ class SpinnerDots(DirectFrame):
 
         tex = self.create_dot_texture(shaded, dot_color)
         self.sprites = [Sprite(self, tex, i, radius, scale, duration) for i in range(dot_cnt)]
+        self.last_lap = None
 
     def create_dot_texture(self, shaded, dot_color):
-        color = (1., 0., 0., 1.) if dot_color is None else dot_color
+        color = (1., 1., 1., 1.) if dot_color is None else dot_color
         *rgb, a = color
         bgr = np.array(rgb)[[2, 1, 0]]
 
@@ -85,7 +80,6 @@ class SpinnerDots(DirectFrame):
         mask = dist <= radius
 
         # Calculating the spherical normal vector.
-        # Use np.maximum in case the calculation result becomes slightly less than 0 due to rounding error.
         nx = (x - center) / radius
         ny = (y - center) / radius
         nz = np.sqrt(np.maximum(0.0, 1.0 - nx ** 2 - ny ** 2))
@@ -115,20 +109,31 @@ class SpinnerDots(DirectFrame):
 
         for sprite in self.sprites:
             sprite.update(dt)
-            # sprite.update()
 
     def finish(self):
+        if self.last_lap is None:
+            self.last_lap = self.sprites[0].laps + 1
+
+        cnt = 0
+        dt = globalClock.get_dt()
+
         for sprite in self.sprites:
-            sprite.finish()
+            if not sprite.is_empty():
+                if sprite.laps == self.last_lap:
+                    sprite.finish()
+                    continue
+
+                sprite.update(dt)
+                cnt += 1
+
+        return cnt == 0
 
 
 class Sprite(OnscreenImage):
 
-    # def __init__(self, parent, image, starting_order, radius=0.15, scale=0.03, duration=3.0):
     def __init__(self, parent, image, starting_order, radius, scale, duration):
         super().__init__(
             image=image,
-            # parent=base.aspect2d,
             parent=parent,
             pos=Point3(radius, 0, 0),
             scale=(scale, 1, scale)
@@ -136,12 +141,12 @@ class Sprite(OnscreenImage):
         self.hide()
         self.set_name(f'circle_{starting_order}')
         self.set_transparency(TransparencyAttrib.M_alpha)
-
         self.radius = radius
         self.duration = duration
         self.elapsed = 0.0
         self.delay = starting_order * 0.15
         self.is_started = False
+        self.laps = 0
 
     def in_out_quart(self, x):
         # Clamp x so that it does not go outside the range of 0.0 to 1.0 by a small margin.
@@ -151,26 +156,24 @@ class Sprite(OnscreenImage):
         return 1 - math.pow(-2 * x + 2, 4) / 2
 
     def update(self, dt):
-
-
-        dt = globalClock.get_dt()
-
         self.elapsed += dt
         current_time = self.elapsed - self.delay
 
         if not self.is_started:
-            if current_time >= 0.0:
-                self.show()
-                self.is_started = True
+            if current_time < 0.0:
+                return
 
-        # Even if current_time continues to increase indefinitely, ensure that loop_time
-        # is in the range of the remainder (0.0 to 3.0 seconds) when divided by self.duration.
+            self.show()
+            self.is_started = True
+
+        # Calculate which lap it is.
+        if (current_lap := int(current_time // self.duration)) > self.laps:
+            self.laps = current_lap
+
         loop_time = current_time % self.duration
-        # Divide loop_time (0.0–3.0) by self.duration(3.0), which is the total duration, 
-        # to set the argument passed to the function to a value between 0 and 1.
         step = loop_time / self.duration
-
         eased_t = self.in_out_quart(step)
+
         theta = 2 * math.pi * eased_t
         x = self.radius * math.sin(theta)
         y = self.radius * math.cos(theta)
@@ -179,35 +182,3 @@ class Sprite(OnscreenImage):
     def finish(self):
         self.hide()
         self.destroy()
-
-
-
-class SpinnerDemo(ShowBase):
-
-    def __init__(self):
-        super().__init__()
-        self.disable_mouse
-        self.render.set_antialias(AntialiasAttrib.M_auto)
-        self.camera.set_pos(20, -30, 5)
-        self.camera.look_at(0, 0, 0)
-
-        # self.sprites = [Sprite('circle.png', i) for i in range(6)]
-        self.spinner = SpinnerDots()
-
-        self.accept('escape', sys.exit)
-        self.task_mgr.add(self.update, 'update')
-
-    def update(self, task):
-        dt = globalClock.get_dt()
-
-        self.spinner.update()
-        # for sprite in self.sprites:
-        #     sprite.update(dt)
-            # sprite.update()
-
-        return task.cont
-
-
-if __name__ == '__main__':
-    spinner = SpinnerDemo()
-    spinner.run()

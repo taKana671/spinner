@@ -14,13 +14,14 @@ class SpinnerDots(DirectFrame):
     """Loading spinner
         Arges:
             dot_color (tuple): The color of the sprites; (RGBA); specify within the range of 0 to 1.; default is white.
+            dot_cnt (int): Number of dots; default is 6.
             shaded (Bool): If True, shaded circular sprites are created; default is False.
             radius (float): The radius of the circle around which the sprites rotate; default is 0.15.
             scale (float): The scale of the sprites; default is 0.03.
             duration (float): Seconds for a sprite to complete one rotation; default is 3.0 seconds.
     """
 
-    def __init__(self, dot_color=None, dot_cnt=6, shaded=True, radius=0.15, scale=0.03, duration=3.0):
+    def __init__(self, dot_color=None, dot_cnt=6, shaded=False, radius=0.15, scale=0.03, duration=3.0):
         super().__init__()
         self.initialiseoptions(type(self))
 

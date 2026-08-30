@@ -13,7 +13,7 @@ from panda3d.core import Texture
 class SpinnerDots(DirectFrame):
     """Loading spinner
         Arges:
-            dot_color (tuple): The color of the sprites; (RGBA); specify within the range of 0 to 1.
+            dot_color (tuple): The color of the sprites; (RGBA); specify within the range of 0 to 1.; default is white.
             shaded (Bool): If True, shaded circular sprites are created; default is False.
             radius (float): The radius of the circle around which the sprites rotate; default is 0.15.
             scale (float): The scale of the sprites; default is 0.03.
@@ -130,6 +130,15 @@ class SpinnerDots(DirectFrame):
 
 
 class Sprite(OnscreenImage):
+    """A circular sprite
+        Arges:
+            parent (NodePath): The NodePath to parent
+            image (Texture): The texture for sprite
+            starting_order (int): Order of Movement
+            radius (float): The radius of the circle around which the sprites rotate
+            scale (float): The scale of the sprites
+            duration (float): Seconds for a sprite to complete one rotation
+    """
 
     def __init__(self, parent, image, starting_order, radius, scale, duration):
         super().__init__(
